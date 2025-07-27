@@ -1,0 +1,295 @@
+// ===========================================
+// BASIC DAX MEASURES - VÍ DỤ CƠ BẢN
+// ===========================================
+
+// 1. TỔNG HỢP CƠ BẢN (Basic Aggregations)
+// ===========================================
+
+// Tổng doanh thu
+Total Sales = SUM(Sales[Amount])
+
+// Tổng chi phí
+Total Cost = SUM(Sales[Cost])
+
+// Lợi nhuận
+Profit = [Total Sales] - [Total Cost]
+
+// Tỷ lệ lợi nhuận
+Profit Margin = DIVIDE([Profit], [Total Sales], 0)
+
+// Số lượng đơn hàng
+Order Count = COUNT(Sales[OrderID])
+
+// Số khách hàng duy nhất
+Unique Customers = DISTINCTCOUNT(Sales[CustomerID])
+
+// Giá trị đơn hàng trung bình
+Average Order Value = DIVIDE([Total Sales], [Order Count], 0)
+
+// Doanh thu trung bình mỗi khách hàng
+Revenue Per Customer = DIVIDE([Total Sales], [Unique Customers], 0)
+
+
+// 2. SỬ DỤNG CALCULATE - QUAN TRỌNG NHẤT
+// ===========================================
+
+// Doanh thu năm 2023
+Sales 2023 = CALCULATE(
+    SUM(Sales[Amount]),
+    YEAR(Sales[Date]) = 2023
+)
+
+// Doanh thu sản phẩm Electronics
+Electronics Sales = CALCULATE(
+    SUM(Sales[Amount]),
+    Products[Category] = "Electronics"
+)
+
+// Doanh thu khách hàng VIP (mua trên 1 triệu)
+VIP Customer Sales = CALCULATE(
+    SUM(Sales[Amount]),
+    Sales[Amount] > 1000000
+)
+
+// Số đơn hàng lớn (trên 500k)
+Large Orders = CALCULATE(
+    COUNT(Sales[OrderID]),
+    Sales[Amount] > 500000
+)
+
+
+// 3. SO SÁNH THỜI GIAN (Time Intelligence)
+// ===========================================
+
+// Doanh thu tháng trước
+Previous Month Sales = CALCULATE(
+    SUM(Sales[Amount]),
+    PREVIOUSMONTH('Date'[Date])
+)
+
+// Tăng trưởng so với tháng trước
+MoM Growth = 
+VAR CurrentMonth = [Total Sales]
+VAR PreviousMonth = [Previous Month Sales]
+RETURN
+IF(
+    PreviousMonth = 0,
+    BLANK(),
+    DIVIDE(CurrentMonth - PreviousMonth, PreviousMonth)
+)
+
+// Doanh thu cùng kỳ năm trước
+Same Period Last Year = CALCULATE(
+    SUM(Sales[Amount]),
+    SAMEPERIODLASTYEAR('Date'[Date])
+)
+
+// Tăng trưởng năm-trên-năm
+YoY Growth = 
+VAR CurrentPeriod = [Total Sales]
+VAR LastYearPeriod = [Same Period Last Year]
+RETURN
+IF(
+    LastYearPeriod = 0,
+    BLANK(),
+    DIVIDE(CurrentPeriod - LastYearPeriod, LastYearPeriod)
+)
+
+// Doanh thu tích lũy từ đầu năm
+YTD Sales = CALCULATE(
+    SUM(Sales[Amount]),
+    DATESYTD('Date'[Date])
+)
+
+// Rolling 3 tháng
+Rolling 3 Months = CALCULATE(
+    SUM(Sales[Amount]),
+    DATESINPERIOD(
+        'Date'[Date],
+        LASTDATE('Date'[Date]),
+        -3,
+        MONTH
+    )
+)
+
+
+// 4. PHÂN TÍCH KHÁCH HÀNG
+// ===========================================
+
+// Khách hàng mới (lần đầu mua trong kỳ)
+New Customers = 
+VAR CurrentPeriodCustomers = VALUES(Sales[CustomerID])
+VAR FirstPurchaseDates = 
+    ADDCOLUMNS(
+        CurrentPeriodCustomers,
+        "FirstPurchase",
+        CALCULATE(MIN(Sales[Date]), ALL('Date'))
+    )
+RETURN
+COUNTROWS(
+    FILTER(
+        FirstPurchaseDates,
+        [FirstPurchase] >= MIN('Date'[Date]) &&
+        [FirstPurchase] <= MAX('Date'[Date])
+    )
+)
+
+// Khách hàng quay lại
+Returning Customers = [Unique Customers] - [New Customers]
+
+// Giá trị trọn đời khách hàng trung bình
+Average CLV = 
+AVERAGEX(
+    VALUES(Sales[CustomerID]),
+    CALCULATE(SUM(Sales[Amount]))
+)
+
+// Tần suất mua hàng trung bình
+Average Purchase Frequency = 
+AVERAGEX(
+    VALUES(Sales[CustomerID]),
+    CALCULATE(COUNT(Sales[OrderID]))
+)
+
+
+// 5. PHÂN TÍCH SẢN PHẨM
+// ===========================================
+
+// Xếp hạng sản phẩm theo doanh thu
+Product Rank = RANKX(
+    ALL(Products[ProductName]),
+    [Total Sales],
+    ,
+    DESC,
+    DENSE
+)
+
+// Top 10 sản phẩm
+Is Top 10 Product = IF([Product Rank] <= 10, "Top 10", "Others")
+
+// Phần trăm đóng góp sản phẩm
+Product Contribution % = 
+DIVIDE(
+    [Total Sales],
+    CALCULATE([Total Sales], ALL(Products)),
+    0
+)
+
+// ABC Classification
+ABC Classification = 
+VAR ProductSales = [Total Sales]
+VAR TotalSales = CALCULATE([Total Sales], ALL(Products))
+VAR RunningTotal = 
+    CALCULATE(
+        [Total Sales],
+        FILTER(
+            ALL(Products),
+            CALCULATE([Total Sales]) >= ProductSales
+        )
+    )
+VAR CumulativePercentage = DIVIDE(RunningTotal, TotalSales)
+RETURN
+SWITCH(
+    TRUE(),
+    CumulativePercentage <= 0.8, "A",
+    CumulativePercentage <= 0.95, "B",
+    "C"
+)
+
+
+// 6. KPI VÀ METRICS
+// ===========================================
+
+// Conversion Rate (giả sử có bảng Website Visits)
+Conversion Rate = 
+DIVIDE(
+    [Order Count],
+    SUM(WebsiteVisits[Visits]),
+    0
+)
+
+// Tỷ lệ khách hàng quay lại
+Customer Retention Rate = 
+DIVIDE([Returning Customers], [Unique Customers], 0)
+
+// Số ngày trung bình giữa các đơn hàng
+Average Days Between Orders = 
+AVERAGEX(
+    VALUES(Sales[CustomerID]),
+    VAR CustomerOrders = 
+        CALCULATETABLE(
+            VALUES(Sales[Date]),
+            ALLEXCEPT(Sales, Sales[CustomerID])
+        )
+    VAR OrderDates = 
+        ADDCOLUMNS(
+            CustomerOrders,
+            "PreviousDate",
+            CALCULATE(
+                MAX(Sales[Date]),
+                Sales[Date] < EARLIER(Sales[Date])
+            )
+        )
+    RETURN
+    AVERAGEX(
+        FILTER(OrderDates, NOT ISBLANK([PreviousDate])),
+        Sales[Date] - [PreviousDate]
+    )
+)
+
+
+// 7. MEASURES VỚI VARIABLES (VAR)
+// ===========================================
+
+// Phân tích lợi nhuận chi tiết
+Detailed Profit Analysis = 
+VAR Revenue = [Total Sales]
+VAR Cost = [Total Cost]
+VAR Profit = Revenue - Cost
+VAR Margin = DIVIDE(Profit, Revenue, 0)
+VAR Status = 
+    SWITCH(
+        TRUE(),
+        Margin >= 0.3, "Excellent",
+        Margin >= 0.2, "Good",
+        Margin >= 0.1, "Average",
+        Margin >= 0, "Poor",
+        "Loss"
+    )
+RETURN
+"Revenue: " & FORMAT(Revenue, "Currency") & 
+" | Profit: " & FORMAT(Profit, "Currency") & 
+" | Margin: " & FORMAT(Margin, "Percent") & 
+" | Status: " & Status
+
+// Performance Score
+Performance Score = 
+VAR RevenueScore = 
+    SWITCH(
+        TRUE(),
+        [Total Sales] >= 1000000, 100,
+        [Total Sales] >= 500000, 80,
+        [Total Sales] >= 100000, 60,
+        [Total Sales] >= 50000, 40,
+        20
+    )
+VAR ProfitScore = 
+    SWITCH(
+        TRUE(),
+        [Profit Margin] >= 0.3, 100,
+        [Profit Margin] >= 0.2, 80,
+        [Profit Margin] >= 0.1, 60,
+        [Profit Margin] >= 0, 40,
+        0
+    )
+VAR CustomerScore = 
+    SWITCH(
+        TRUE(),
+        [Unique Customers] >= 1000, 100,
+        [Unique Customers] >= 500, 80,
+        [Unique Customers] >= 100, 60,
+        [Unique Customers] >= 50, 40,
+        20
+    )
+RETURN
+(RevenueScore + ProfitScore + CustomerScore) / 3

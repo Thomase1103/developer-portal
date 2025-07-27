@@ -1,0 +1,412 @@
+// ===========================================
+// CALCULATED COLUMNS - VÍ DỤ CỘT TÍNH TOÁN
+// ===========================================
+
+// BẢNG SALES - Calculated Columns
+// ===========================================
+
+// 1. Tính toán cơ bản
+Sales[Total_Amount] = Sales[Quantity] * Sales[Unit_Price]
+
+Sales[Profit_Amount] = Sales[Total_Amount] - Sales[Cost]
+
+Sales[Profit_Margin] = DIVIDE(Sales[Profit_Amount], Sales[Total_Amount], 0)
+
+Sales[Discount_Amount] = Sales[Total_Amount] * Sales[Discount_Percent]
+
+Sales[Final_Amount] = Sales[Total_Amount] - Sales[Discount_Amount]
+
+// 2. Phân loại doanh thu
+Sales[Revenue_Category] = 
+SWITCH(
+    TRUE(),
+    Sales[Total_Amount] >= 1000000, "High",
+    Sales[Total_Amount] >= 500000, "Medium",
+    Sales[Total_Amount] >= 100000, "Low",
+    "Very Low"
+)
+
+// 3. Phân loại theo tháng
+Sales[Month_Name] = FORMAT(Sales[Date], "MMMM")
+Sales[Year_Month] = FORMAT(Sales[Date], "YYYY-MM")
+Sales[Quarter] = "Q" & QUARTER(Sales[Date])
+Sales[Year_Quarter] = YEAR(Sales[Date]) & "-Q" & QUARTER(Sales[Date])
+
+// 4. Ngày trong tuần
+Sales[Day_of_Week] = WEEKDAY(Sales[Date], 2) // Monday = 1
+Sales[Day_Name] = 
+SWITCH(
+    WEEKDAY(Sales[Date], 2),
+    1, "Thứ Hai",
+    2, "Thứ Ba", 
+    3, "Thứ Tư",
+    4, "Thứ Năm",
+    5, "Thứ Sáu",
+    6, "Thứ Bảy",
+    7, "Chủ Nhật"
+)
+
+Sales[Is_Weekend] = IF(WEEKDAY(Sales[Date], 2) >= 6, "Weekend", "Weekday")
+
+// 5. Tuổi của đơn hàng
+Sales[Days_Since_Order] = DATEDIFF(Sales[Date], TODAY(), DAY)
+
+Sales[Order_Age_Category] = 
+SWITCH(
+    TRUE(),
+    Sales[Days_Since_Order] <= 30, "Recent",
+    Sales[Days_Since_Order] <= 90, "Medium",
+    Sales[Days_Since_Order] <= 365, "Old",
+    "Very Old"
+)
+
+// 6. Ranking trong ngày
+Sales[Daily_Rank] = 
+RANKX(
+    FILTER(Sales, Sales[Date] = EARLIER(Sales[Date])),
+    Sales[Total_Amount],
+    ,
+    DESC,
+    DENSE
+)
+
+// 7. Phân tích ABC cho từng khách hàng
+Sales[Customer_ABC] = 
+VAR CurrentCustomer = Sales[CustomerID]
+VAR CustomerSales = 
+    CALCULATE(
+        SUM(Sales[Total_Amount]),
+        FILTER(Sales, Sales[CustomerID] = CurrentCustomer),
+        ALL(Sales[Date])
+    )
+VAR AllCustomerSales = 
+    SUMMARIZE(
+        Sales,
+        Sales[CustomerID],
+        "CustomerTotal", CALCULATE(SUM(Sales[Total_Amount]), ALL(Sales[Date]))
+    )
+VAR CustomerRank = 
+    RANKX(AllCustomerSales, [CustomerTotal], , DESC)
+VAR TotalCustomers = COUNTROWS(AllCustomerSales)
+VAR Percentile = DIVIDE(CustomerRank, TotalCustomers)
+RETURN
+SWITCH(
+    TRUE(),
+    Percentile <= 0.2, "A",
+    Percentile <= 0.5, "B",
+    "C"
+)
+
+
+// BẢNG CUSTOMERS - Calculated Columns
+// ===========================================
+
+// 1. Thông tin cơ bản
+Customers[Full_Name] = Customers[First_Name] & " " & Customers[Last_Name]
+
+Customers[Age] = DATEDIFF(Customers[Birth_Date], TODAY(), YEAR)
+
+Customers[Age_Group] = 
+SWITCH(
+    TRUE(),
+    Customers[Age] < 25, "Gen Z",
+    Customers[Age] < 40, "Millennials", 
+    Customers[Age] < 55, "Gen X",
+    "Boomers"
+)
+
+// 2. Phân tích địa lý
+Customers[Region] = 
+SWITCH(
+    LEFT(Customers[City], 2),
+    "HN", "Miền Bắc",
+    "HM", "Miền Nam", 
+    "DN", "Miền Trung",
+    "HP", "Miền Bắc",
+    "Khác"
+)
+
+// 3. Thời gian từ lần đầu mua
+Customers[First_Purchase_Date] = 
+CALCULATE(
+    MIN(Sales[Date]),
+    FILTER(Sales, Sales[CustomerID] = Customers[CustomerID])
+)
+
+Customers[Days_Since_First_Purchase] = 
+DATEDIFF(Customers[First_Purchase_Date], TODAY(), DAY)
+
+Customers[Customer_Tenure] = 
+SWITCH(
+    TRUE(),
+    Customers[Days_Since_First_Purchase] < 90, "New",
+    Customers[Days_Since_First_Purchase] < 365, "Regular",
+    Customers[Days_Since_First_Purchase] < 1095, "Loyal",
+    "VIP"
+)
+
+// 4. Tổng số đơn hàng của khách hàng
+Customers[Total_Orders] = 
+CALCULATE(
+    COUNT(Sales[OrderID]),
+    FILTER(Sales, Sales[CustomerID] = Customers[CustomerID])
+)
+
+// 5. Tổng giá trị mua hàng
+Customers[Total_Purchase_Value] = 
+CALCULATE(
+    SUM(Sales[Total_Amount]),
+    FILTER(Sales, Sales[CustomerID] = Customers[CustomerID])
+)
+
+// 6. Giá trị đơn hàng trung bình
+Customers[Average_Order_Value] = 
+DIVIDE(Customers[Total_Purchase_Value], Customers[Total_Orders], 0)
+
+// 7. Phân loại khách hàng RFM đơn giản
+Customers[Recency_Score] = 
+VAR LastPurchase = 
+    CALCULATE(
+        MAX(Sales[Date]),
+        FILTER(Sales, Sales[CustomerID] = Customers[CustomerID])
+    )
+VAR DaysSinceLastPurchase = DATEDIFF(LastPurchase, TODAY(), DAY)
+RETURN
+SWITCH(
+    TRUE(),
+    DaysSinceLastPurchase <= 30, 5,
+    DaysSinceLastPurchase <= 90, 4,
+    DaysSinceLastPurchase <= 180, 3,
+    DaysSinceLastPurchase <= 365, 2,
+    1
+)
+
+Customers[Frequency_Score] = 
+SWITCH(
+    TRUE(),
+    Customers[Total_Orders] >= 20, 5,
+    Customers[Total_Orders] >= 10, 4,
+    Customers[Total_Orders] >= 5, 3,
+    Customers[Total_Orders] >= 2, 2,
+    1
+)
+
+Customers[Monetary_Score] = 
+SWITCH(
+    TRUE(),
+    Customers[Total_Purchase_Value] >= 10000000, 5,
+    Customers[Total_Purchase_Value] >= 5000000, 4,
+    Customers[Total_Purchase_Value] >= 1000000, 3,
+    Customers[Total_Purchase_Value] >= 500000, 2,
+    1
+)
+
+Customers[RFM_Score] = 
+(Customers[Recency_Score] * 100) + 
+(Customers[Frequency_Score] * 10) + 
+Customers[Monetary_Score]
+
+Customers[Customer_Segment] = 
+SWITCH(
+    TRUE(),
+    Customers[RFM_Score] >= 555, "Champions",
+    Customers[RFM_Score] >= 544, "Loyal Customers",
+    Customers[RFM_Score] >= 434, "Potential Loyalists",
+    Customers[RFM_Score] >= 344, "New Customers",
+    Customers[RFM_Score] >= 334, "Promising",
+    Customers[RFM_Score] >= 244, "Need Attention",
+    Customers[RFM_Score] >= 155, "About to Sleep",
+    Customers[RFM_Score] >= 144, "At Risk",
+    Customers[RFM_Score] >= 134, "Cannot Lose Them",
+    "Hibernating"
+)
+
+
+// BẢNG PRODUCTS - Calculated Columns
+// ===========================================
+
+// 1. Thông tin sản phẩm
+Products[Product_Name_Upper] = UPPER(Products[Product_Name])
+
+Products[SKU_Short] = LEFT(Products[SKU], 8)
+
+Products[Category_SubCategory] = Products[Category] & " - " & Products[SubCategory]
+
+// 2. Phân loại giá
+Products[Price_Range] = 
+SWITCH(
+    TRUE(),
+    Products[Unit_Price] >= 1000000, "Premium",
+    Products[Unit_Price] >= 500000, "High",
+    Products[Unit_Price] >= 100000, "Medium",
+    Products[Unit_Price] >= 50000, "Low",
+    "Budget"
+)
+
+// 3. Tuổi sản phẩm
+Products[Days_Since_Launch] = DATEDIFF(Products[Launch_Date], TODAY(), DAY)
+
+Products[Product_Lifecycle] = 
+SWITCH(
+    TRUE(),
+    Products[Days_Since_Launch] <= 90, "New",
+    Products[Days_Since_Launch] <= 365, "Growth",
+    Products[Days_Since_Launch] <= 1095, "Mature",
+    "Decline"
+)
+
+// 4. Phân tích bán hàng sản phẩm
+Products[Total_Quantity_Sold] = 
+CALCULATE(
+    SUM(Sales[Quantity]),
+    FILTER(Sales, Sales[ProductID] = Products[ProductID])
+)
+
+Products[Total_Revenue] = 
+CALCULATE(
+    SUM(Sales[Total_Amount]),
+    FILTER(Sales, Sales[ProductID] = Products[ProductID])
+)
+
+Products[Average_Sale_Price] = 
+DIVIDE(Products[Total_Revenue], Products[Total_Quantity_Sold], 0)
+
+// 5. Ranking sản phẩm
+Products[Revenue_Rank] = 
+RANKX(
+    ALL(Products),
+    Products[Total_Revenue],
+    ,
+    DESC,
+    DENSE
+)
+
+Products[Quantity_Rank] = 
+RANKX(
+    ALL(Products),
+    Products[Total_Quantity_Sold],
+    ,
+    DESC,
+    DENSE
+)
+
+// 6. Phân tích ABC
+Products[Revenue_Percentile] = 
+VAR ProductRevenue = Products[Total_Revenue]
+VAR TotalProducts = COUNTROWS(ALL(Products))
+VAR ProductsWithHigherRevenue = 
+    COUNTROWS(
+        FILTER(
+            ALL(Products),
+            Products[Total_Revenue] > ProductRevenue
+        )
+    )
+RETURN
+DIVIDE(ProductsWithHigherRevenue, TotalProducts)
+
+Products[ABC_Analysis] = 
+SWITCH(
+    TRUE(),
+    Products[Revenue_Percentile] <= 0.2, "A",
+    Products[Revenue_Percentile] <= 0.5, "B",
+    "C"
+)
+
+// 7. Seasonal Analysis
+Products[Best_Selling_Month] = 
+VAR ProductID = Products[ProductID]
+VAR MonthlySales = 
+    ADDCOLUMNS(
+        VALUES('Date'[Month]),
+        "MonthSales",
+        CALCULATE(
+            SUM(Sales[Quantity]),
+            Sales[ProductID] = ProductID
+        )
+    )
+VAR MaxSales = MAXX(MonthlySales, [MonthSales])
+VAR BestMonth = 
+    MAXX(
+        FILTER(MonthlySales, [MonthSales] = MaxSales),
+        'Date'[Month]
+    )
+RETURN
+FORMAT(DATE(2023, BestMonth, 1), "MMMM")
+
+// 8. Stock Analysis (nếu có thông tin tồn kho)
+Products[Stock_Status] = 
+SWITCH(
+    TRUE(),
+    Products[Stock_Quantity] <= 0, "Out of Stock",
+    Products[Stock_Quantity] <= 10, "Low Stock",
+    Products[Stock_Quantity] <= 50, "Medium Stock",
+    "High Stock"
+)
+
+Products[Days_of_Stock] = 
+VAR DailySales = 
+    DIVIDE(
+        Products[Total_Quantity_Sold],
+        CALCULATE(
+            DISTINCTCOUNT(Sales[Date]),
+            FILTER(Sales, Sales[ProductID] = Products[ProductID])
+        ),
+        0
+    )
+RETURN
+IF(DailySales > 0, DIVIDE(Products[Stock_Quantity], DailySales), BLANK())
+
+
+// BẢNG DATE - Calendar Table Columns
+// ===========================================
+
+'Date'[Year] = YEAR('Date'[Date])
+'Date'[Month] = MONTH('Date'[Date])
+'Date'[Day] = DAY('Date'[Date])
+'Date'[Quarter] = QUARTER('Date'[Date])
+
+'Date'[Month_Name] = FORMAT('Date'[Date], "MMMM")
+'Date'[Month_Year] = FORMAT('Date'[Date], "MMM YYYY")
+'Date'[Quarter_Year] = "Q" & 'Date'[Quarter] & " " & 'Date'[Year]
+
+'Date'[Day_of_Week] = WEEKDAY('Date'[Date], 2)
+'Date'[Day_Name] = 
+SWITCH(
+    'Date'[Day_of_Week],
+    1, "Monday",
+    2, "Tuesday",
+    3, "Wednesday", 
+    4, "Thursday",
+    5, "Friday",
+    6, "Saturday",
+    7, "Sunday"
+)
+
+'Date'[Is_Weekend] = IF('Date'[Day_of_Week] >= 6, TRUE, FALSE)
+'Date'[Is_Holiday] = 
+IF(
+    'Date'[Date] IN {
+        DATE(2023,1,1), -- New Year
+        DATE(2023,4,30), -- Liberation Day
+        DATE(2023,5,1), -- Labor Day
+        DATE(2023,9,2) -- National Day
+    },
+    TRUE,
+    FALSE
+)
+
+'Date'[Week_of_Year] = WEEKNUM('Date'[Date], 2)
+'Date'[Is_Current_Month] = 
+IF(
+    YEAR('Date'[Date]) = YEAR(TODAY()) && 
+    MONTH('Date'[Date]) = MONTH(TODAY()),
+    TRUE,
+    FALSE
+)
+
+'Date'[Relative_Month] = 
+DATEDIFF(
+    DATE(YEAR(TODAY()), MONTH(TODAY()), 1),
+    DATE(YEAR('Date'[Date]), MONTH('Date'[Date]), 1),
+    MONTH
+)
