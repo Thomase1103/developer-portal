@@ -1,0 +1,485 @@
+// ===========================================
+// ADVANCED DAX PATTERNS - MẪU NÂNG CAO
+// ===========================================
+
+// 1. PATTERN: ITERATIVE FUNCTIONS
+// ===========================================
+
+// Running Total (Tổng tích lũy)
+Running Total = 
+CALCULATE(
+    SUM(Sales[Amount]),
+    FILTER(
+        ALL(Sales),
+        Sales[Date] <= MAX(Sales[Date])
+    )
+)
+
+// Running Average (Trung bình tích lũy)
+Running Average = 
+VAR CurrentDate = MAX(Sales[Date])
+VAR RunningSum = 
+    CALCULATE(
+        SUM(Sales[Amount]),
+        FILTER(ALL(Sales), Sales[Date] <= CurrentDate)
+    )
+VAR RunningCount = 
+    CALCULATE(
+        COUNT(Sales[OrderID]),
+        FILTER(ALL(Sales), Sales[Date] <= CurrentDate)
+    )
+RETURN
+DIVIDE(RunningSum, RunningCount)
+
+// Percentile Calculation
+Sales Percentile = 
+VAR CurrentSales = SUM(Sales[Amount])
+VAR AllSales = 
+    CALCULATETABLE(
+        VALUES(Sales[Amount]),
+        ALL(Sales)
+    )
+VAR LowerValues = 
+    COUNTROWS(
+        FILTER(AllSales, Sales[Amount] <= CurrentSales)
+    )
+VAR TotalValues = COUNTROWS(AllSales)
+RETURN
+DIVIDE(LowerValues, TotalValues)
+
+
+// 2. PATTERN: DYNAMIC SEGMENTATION
+// ===========================================
+
+// Dynamic ABC Analysis với tham số
+Dynamic ABC Analysis = 
+VAR AThreshold = 0.8  // 80% cho nhóm A
+VAR BThreshold = 0.95 // 95% cho nhóm B
+VAR CurrentValue = SUM(Sales[Amount])
+VAR SortedValues = 
+    ADDCOLUMNS(
+        ALL(Products[ProductID]),
+        "ProductSales", CALCULATE(SUM(Sales[Amount]))
+    )
+VAR TotalSales = SUMX(SortedValues, [ProductSales])
+VAR RunningTotal = 
+    SUMX(
+        FILTER(
+            SortedValues,
+            [ProductSales] >= CurrentValue
+        ),
+        [ProductSales]
+    )
+VAR CumulativePercentage = DIVIDE(RunningTotal, TotalSales)
+RETURN
+SWITCH(
+    TRUE(),
+    CumulativePercentage <= AThreshold, "A",
+    CumulativePercentage <= BThreshold, "B",
+    "C"
+)
+
+// Customer Cohort Analysis
+Cohort Retention Rate = 
+VAR CurrentMonth = MAX('Date'[Month])
+VAR CurrentYear = MAX('Date'[Year])
+VAR CohortMonth = 
+    CALCULATE(
+        MIN('Date'[Month]),
+        FILTER(
+            ALL(Sales),
+            Sales[CustomerID] IN VALUES(Sales[CustomerID])
+        )
+    )
+VAR CohortYear = 
+    CALCULATE(
+        MIN('Date'[Year]),
+        FILTER(
+            ALL(Sales),
+            Sales[CustomerID] IN VALUES(Sales[CustomerID])
+        )
+    )
+VAR CohortSize = 
+    CALCULATE(
+        DISTINCTCOUNT(Sales[CustomerID]),
+        'Date'[Month] = CohortMonth,
+        'Date'[Year] = CohortYear
+    )
+VAR ActiveCustomers = 
+    CALCULATE(
+        DISTINCTCOUNT(Sales[CustomerID]),
+        'Date'[Month] = CurrentMonth,
+        'Date'[Year] = CurrentYear,
+        FILTER(
+            ALL(Sales),
+            CALCULATE(MIN('Date'[Month])) = CohortMonth &&
+            CALCULATE(MIN('Date'[Year])) = CohortYear
+        )
+    )
+RETURN
+DIVIDE(ActiveCustomers, CohortSize)
+
+
+// 3. PATTERN: CROSS-FILTERING TECHNIQUES
+// ===========================================
+
+// Same Store Sales (so sánh cửa hàng cùng loại)
+Same Store Sales Growth = 
+VAR CurrentStoreSales = SUM(Sales[Amount])
+VAR StoreType = SELECTEDVALUE(Stores[StoreType])
+VAR SameTypeStoresAvg = 
+    CALCULATE(
+        AVERAGE(Sales[Amount]),
+        Stores[StoreType] = StoreType,
+        ALL(Stores[StoreID])
+    )
+RETURN
+DIVIDE(CurrentStoreSales - SameTypeStoresAvg, SameTypeStoresAvg)
+
+// Market Share Calculation
+Market Share = 
+VAR CompanySales = SUM(Sales[Amount])
+VAR TotalMarketSales = 
+    CALCULATE(
+        SUM(Sales[Amount]),
+        ALL(Products),
+        ALL(Stores)
+    )
+RETURN
+DIVIDE(CompanySales, TotalMarketSales)
+
+// Penetration Rate
+Category Penetration = 
+VAR CategoryCustomers = 
+    CALCULATE(
+        DISTINCTCOUNT(Sales[CustomerID]),
+        Products[Category] = SELECTEDVALUE(Products[Category])
+    )
+VAR TotalCustomers = 
+    CALCULATE(
+        DISTINCTCOUNT(Sales[CustomerID]),
+        ALL(Products)
+    )
+RETURN
+DIVIDE(CategoryCustomers, TotalCustomers)
+
+
+// 4. PATTERN: ADVANCED TIME INTELLIGENCE
+// ===========================================
+
+// Custom Fiscal Year calculations
+Fiscal YTD Sales = 
+VAR FiscalYearStart = DATE(YEAR(TODAY()) - IF(MONTH(TODAY()) < 4, 1, 0), 4, 1)
+VAR CurrentDate = MAX('Date'[Date])
+RETURN
+CALCULATE(
+    SUM(Sales[Amount]),
+    'Date'[Date] >= FiscalYearStart,
+    'Date'[Date] <= CurrentDate
+)
+
+// Seasonal Indexing
+Seasonal Index = 
+VAR CurrentMonthSales = SUM(Sales[Amount])
+VAR CurrentMonth = MAX('Date'[Month])
+VAR MonthlyAverage = 
+    CALCULATE(
+        AVERAGE(Sales[Amount]),
+        FILTER(ALL('Date'), 'Date'[Month] = CurrentMonth)
+    )
+VAR OverallAverage = 
+    CALCULATE(
+        AVERAGE(Sales[Amount]),
+        ALL('Date')
+    )
+RETURN
+DIVIDE(MonthlyAverage, OverallAverage)
+
+// Custom Period Over Period
+Custom Period Comparison = 
+VAR SelectedPeriod = SELECTEDVALUE('Period Selector'[Period])
+VAR CurrentValue = SUM(Sales[Amount])
+VAR ComparisonValue = 
+    SWITCH(
+        SelectedPeriod,
+        "Previous Month", 
+            CALCULATE(
+                SUM(Sales[Amount]),
+                PREVIOUSMONTH('Date'[Date])
+            ),
+        "Same Month Last Year",
+            CALCULATE(
+                SUM(Sales[Amount]),
+                SAMEPERIODLASTYEAR('Date'[Date])
+            ),
+        "3 Months Ago",
+            CALCULATE(
+                SUM(Sales[Amount]),
+                DATEADD('Date'[Date], -3, MONTH)
+            ),
+        BLANK()
+    )
+RETURN
+DIVIDE(CurrentValue - ComparisonValue, ComparisonValue)
+
+
+// 5. PATTERN: STATISTICAL ANALYSIS
+// ===========================================
+
+// Standard Deviation
+Sales Standard Deviation = 
+VAR SampleCount = COUNT(Sales[OrderID])
+VAR SampleMean = AVERAGE(Sales[Amount])
+VAR SumOfSquaredDifferences = 
+    SUMX(
+        Sales,
+        POWER(Sales[Amount] - SampleMean, 2)
+    )
+RETURN
+IF(
+    SampleCount > 1,
+    SQRT(DIVIDE(SumOfSquaredDifferences, SampleCount - 1)),
+    BLANK()
+)
+
+// Correlation Coefficient (simplified)
+Sales Quantity Correlation = 
+VAR N = COUNT(Sales[OrderID])
+VAR SumX = SUM(Sales[Amount])
+VAR SumY = SUM(Sales[Quantity])
+VAR SumXY = SUMX(Sales, Sales[Amount] * Sales[Quantity])
+VAR SumX2 = SUMX(Sales, POWER(Sales[Amount], 2))
+VAR SumY2 = SUMX(Sales, POWER(Sales[Quantity], 2))
+VAR Numerator = (N * SumXY) - (SumX * SumY)
+VAR Denominator = 
+    SQRT(
+        ((N * SumX2) - POWER(SumX, 2)) *
+        ((N * SumY2) - POWER(SumY, 2))
+    )
+RETURN
+IF(
+    Denominator <> 0,
+    DIVIDE(Numerator, Denominator),
+    BLANK()
+)
+
+// Z-Score calculation
+Sales Z-Score = 
+VAR CurrentSales = SUM(Sales[Amount])
+VAR PopulationMean = 
+    CALCULATE(
+        AVERAGE(Sales[Amount]),
+        ALL(Sales)
+    )
+VAR PopulationStdDev = [Sales Standard Deviation]
+RETURN
+IF(
+    PopulationStdDev <> 0,
+    DIVIDE(CurrentSales - PopulationMean, PopulationStdDev),
+    BLANK()
+)
+
+
+// 6. PATTERN: RECURSIVE CALCULATIONS
+// ===========================================
+
+// Hierarchical Calculations (Manager chain)
+Manager Chain Revenue = 
+VAR CurrentEmployee = SELECTEDVALUE(Employees[EmployeeID])
+VAR ManagerHierarchy = 
+    PATH(Employees[EmployeeID], Employees[ManagerID])
+VAR AllSubordinates = 
+    FILTER(
+        ALL(Employees),
+        PATHCONTAINS(ManagerHierarchy, Employees[EmployeeID])
+    )
+RETURN
+CALCULATE(
+    SUM(Sales[Amount]),
+    Employees[EmployeeID] IN AllSubordinates
+)
+
+// Category Hierarchy Rolling Up
+Category Hierarchy Sales = 
+VAR CurrentCategory = SELECTEDVALUE(Products[Category])
+VAR CategoryLevel = SELECTEDVALUE(Products[CategoryLevel])
+VAR ChildCategories = 
+    FILTER(
+        ALL(Products),
+        PATHCONTAINS(
+            Products[CategoryPath],
+            CurrentCategory
+        )
+    )
+RETURN
+CALCULATE(
+    SUM(Sales[Amount]),
+    Products[ProductID] IN 
+        SELECTCOLUMNS(ChildCategories, "ID", Products[ProductID])
+)
+
+
+// 7. PATTERN: DYNAMIC RANKING & FILTERING
+// ===========================================
+
+// Top N with Dynamic N
+Dynamic Top N Products = 
+VAR TopNValue = SELECTEDVALUE('Parameters'[TopN], 10)
+VAR ProductRank = 
+    RANKX(
+        ALL(Products),
+        CALCULATE(SUM(Sales[Amount])),
+        ,
+        DESC,
+        DENSE
+    )
+RETURN
+IF(ProductRank <= TopNValue, SUM(Sales[Amount]), BLANK())
+
+// Pareto Analysis (80/20 rule)
+Pareto Analysis = 
+VAR CurrentProductSales = CALCULATE(SUM(Sales[Amount]))
+VAR TotalSales = CALCULATE(SUM(Sales[Amount]), ALL(Products))
+VAR SortedProducts = 
+    ADDCOLUMNS(
+        ALL(Products),
+        "ProductSales", CALCULATE(SUM(Sales[Amount]))
+    )
+VAR CumulativeSales = 
+    SUMX(
+        FILTER(
+            SortedProducts,
+            [ProductSales] >= CurrentProductSales
+        ),
+        [ProductSales]
+    )
+VAR CumulativePercentage = DIVIDE(CumulativeSales, TotalSales)
+RETURN
+IF(CumulativePercentage <= 0.8, "Top 80%", "Bottom 20%")
+
+// Dynamic Benchmark Comparison
+Dynamic Benchmark = 
+VAR BenchmarkType = SELECTEDVALUE('Benchmark'[Type])
+VAR CurrentValue = SUM(Sales[Amount])
+VAR BenchmarkValue = 
+    SWITCH(
+        BenchmarkType,
+        "Industry Average", 1000000, // Static value
+        "Company Average", 
+            CALCULATE(
+                AVERAGE(Sales[Amount]),
+                ALL(Products)
+            ),
+        "Best Performer",
+            CALCULATE(
+                MAX(Sales[Amount]),
+                ALL(Products)
+            ),
+        "Previous Year",
+            CALCULATE(
+                SUM(Sales[Amount]),
+                SAMEPERIODLASTYEAR('Date'[Date])
+            ),
+        BLANK()
+    )
+RETURN
+DIVIDE(CurrentValue, BenchmarkValue) - 1
+
+
+// 8. PATTERN: ADVANCED FILTERING
+// ===========================================
+
+// Multi-dimensional filtering
+Complex Filter Sales = 
+VAR MinAmount = SELECTEDVALUE('Filters'[MinAmount], 0)
+VAR MaxAmount = SELECTEDVALUE('Filters'[MaxAmount], 999999999)
+VAR SelectedCategories = SELECTEDVALUE('Filters'[Categories], "All")
+VAR SelectedRegions = SELECTEDVALUE('Filters'[Regions], "All")
+VAR DateRangeStart = SELECTEDVALUE('Filters'[StartDate])
+VAR DateRangeEnd = SELECTEDVALUE('Filters'[EndDate])
+RETURN
+CALCULATE(
+    SUM(Sales[Amount]),
+    Sales[Amount] >= MinAmount,
+    Sales[Amount] <= MaxAmount,
+    IF(
+        SelectedCategories <> "All",
+        Products[Category] = SelectedCategories,
+        TRUE()
+    ),
+    IF(
+        SelectedRegions <> "All",
+        Customers[Region] = SelectedRegions,
+        TRUE()
+    ),
+    IF(
+        NOT ISBLANK(DateRangeStart),
+        Sales[Date] >= DateRangeStart,
+        TRUE()
+    ),
+    IF(
+        NOT ISBLANK(DateRangeEnd),
+        Sales[Date] <= DateRangeEnd,
+        TRUE()
+    )
+)
+
+// Conditional Aggregation
+Conditional KPI = 
+VAR KPIType = SELECTEDVALUE('KPI Selector'[KPI])
+RETURN
+SWITCH(
+    KPIType,
+    "Revenue", SUM(Sales[Amount]),
+    "Units", SUM(Sales[Quantity]),
+    "Orders", COUNT(Sales[OrderID]),
+    "Customers", DISTINCTCOUNT(Sales[CustomerID]),
+    "AOV", DIVIDE(SUM(Sales[Amount]), COUNT(Sales[OrderID])),
+    "Margin", DIVIDE(SUM(Sales[Profit]), SUM(Sales[Amount])),
+    BLANK()
+)
+
+
+// 9. PATTERN: ERROR HANDLING & VALIDATION
+// ===========================================
+
+// Robust Division with Error Handling
+Safe Division = 
+VAR Numerator = SUM(Sales[Amount])
+VAR Denominator = COUNT(Sales[OrderID])
+RETURN
+SWITCH(
+    TRUE(),
+    ISBLANK(Numerator), BLANK(),
+    ISBLANK(Denominator), BLANK(),
+    Denominator = 0, BLANK(),
+    DIVIDE(Numerator, Denominator)
+)
+
+// Data Quality Check
+Data Quality Score = 
+VAR TotalRecords = COUNT(Sales[OrderID])
+VAR CompleteRecords = 
+    COUNTROWS(
+        FILTER(
+            Sales,
+            NOT ISBLANK(Sales[CustomerID]) &&
+            NOT ISBLANK(Sales[ProductID]) &&
+            NOT ISBLANK(Sales[Amount]) &&
+            Sales[Amount] > 0
+        )
+    )
+VAR ValidationScore = DIVIDE(CompleteRecords, TotalRecords)
+RETURN
+FORMAT(ValidationScore, "Percent")
+
+// Missing Data Analysis
+Missing Data Percentage = 
+VAR TotalRows = COUNT(Sales[OrderID])
+VAR MissingCustomer = COUNTBLANK(Sales[CustomerID])
+VAR MissingProduct = COUNTBLANK(Sales[ProductID])
+VAR MissingAmount = COUNTBLANK(Sales[Amount])
+VAR TotalMissing = MissingCustomer + MissingProduct + MissingAmount
+VAR TotalFields = TotalRows * 3 // 3 critical fields
+RETURN
+DIVIDE(TotalMissing, TotalFields)
